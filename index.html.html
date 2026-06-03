@@ -854,126 +854,147 @@ function FourV4Card(props){
   var state=props.state,setState=props.setState;
   var pars=MINES_PARS;
   var dt=state.draftTeams||{A:[],B:[]};
-  var locked=state.draftLocked;
-  var s1=_us(null);var picking=s1[0];var setPicking=s1[1]; // "A" or "B"
-
-  // Determine draft order from leaderboard
-  var leaderboard=[];try{leaderboard=PLAYERS.map(function(p){return{p:p,total:calcTotal(state,p)};}).sort(function(a,b){return b.total-a.total;});}catch(e){leaderboard=PLAYERS.map(function(p){return{p:p,total:0};});}
-  var drafted=dt.A.concat(dt.B);
+  var teamA=dt.A||[];
+  var teamB=dt.B||[];
+  var locked=state.draftLocked||false;
+  var drafted=teamA.concat(teamB);
   var remaining=PLAYERS.filter(function(p){return drafted.indexOf(p)===-1;});
-  // Snake: A picks odd rounds (0,2,4,6), B picks even rounds (1,3,5,7)... 
-  // Actually: leader picks for A first, then alternates
-  var pickCount=drafted.length; // 0-7
-  var currentTeamPick=pickCount%2===0?"A":"B";
+  var pickCount=drafted.length;
+  var currentPick=pickCount%2===0?"A":"B";
 
-  function makePick(player){
-    if(locked)return;
+  // Safe leaderboard sort
+  var leaderboard=PLAYERS.slice().sort(function(a,b){
+    var ta=0,tb=0;
+    try{ta=calcTotal(state,a);}catch(e){}
+    try{tb=calcTotal(state,b);}catch(e){}
+    return tb-ta;
+  });
+
+  function makePick(p){
+    if(locked||drafted.indexOf(p)!==-1)return;
     setState(function(prev){
-      var newDt=Object.assign({},prev.draftTeams);
-      newDt.A=prev.draftTeams.A.slice();newDt.B=prev.draftTeams.B.slice();
-      newDt[currentTeamPick]=newDt[currentTeamPick].concat([player]);
-      return Object.assign({},prev,{draftTeams:newDt});
+      var a=(prev.draftTeams&&prev.draftTeams.A)||[];
+      var b=(prev.draftTeams&&prev.draftTeams.B)||[];
+      var cnt=a.length+b.length;
+      var pick=cnt%2===0?"A":"B";
+      var newA=a.slice(),newB=b.slice();
+      if(pick==="A")newA=newA.concat([p]);
+      else newB=newB.concat([p]);
+      return Object.assign({},prev,{draftTeams:{A:newA,B:newB}});
     });
   }
   function undoPick(){
     setState(function(prev){
-      var newDt={A:prev.draftTeams.A.slice(),B:prev.draftTeams.B.slice()};
-      if(newDt.B.length>0)newDt.B.pop();
-      else if(newDt.A.length>0)newDt.A.pop();
-      return Object.assign({},prev,{draftTeams:newDt});
+      var a=(prev.draftTeams&&prev.draftTeams.A)||[];
+      var b=(prev.draftTeams&&prev.draftTeams.B)||[];
+      var newA=a.slice(),newB=b.slice();
+      if(newB.length>0)newB.pop();
+      else if(newA.length>0)newA.pop();
+      return Object.assign({},prev,{draftTeams:{A:newA,B:newB}});
     });
   }
   function resetDraft(){setState(function(prev){return Object.assign({},prev,{draftTeams:{A:[],B:[]},draftLocked:false});});}
   function lockDraft(){setState(function(prev){return Object.assign({},prev,{draftLocked:true});});}
   function unlockDraft(){setState(function(prev){return Object.assign({},prev,{draftLocked:false});});}
-  function swapDraft(src,dst){
-    setState(function(prev){
-      var newDt={A:prev.draftTeams.A.slice(),B:prev.draftTeams.B.slice()};
-      var sa=src.split("_")[0],si=parseInt(src.split("_")[1]);
-      var da=dst.split("_")[0],di=parseInt(dst.split("_")[1]);
-      var tmp=newDt[sa][si];newDt[sa][si]=newDt[da][di];newDt[da][di]=tmp;
-      return Object.assign({},prev,{draftTeams:newDt});
-    });
-  }
-
   function setScore(t,h2,v){setState(function(prev){var ns=Object.assign({},prev.fv4Scores||{A:{},B:{}});ns[t]=Object.assign({},ns[t]||{});ns[t][h2]=v;return Object.assign({},prev,{fv4Scores:ns});});}
   function togCTP(p,h2){setState(function(prev){return Object.assign({},prev,{fv4CTPList:togListItem(prev.fv4CTPList,p,h2)});});}
   function togLD(p,h2){setState(function(prev){return Object.assign({},prev,{fv4LDList:togListItem(prev.fv4LDList,p,h2)});});}
-  function togBF(team){setState(function(prev){var k=team==="A"?"fv4BogeyFreeA":"fv4BogeyFreeB";var u={};u[k]=!prev[k];return Object.assign({},prev,u);});}
+  function togBF(t){setState(function(prev){if(t==="A")return Object.assign({},prev,{fv4BogeyFreeA:!prev.fv4BogeyFreeA});return Object.assign({},prev,{fv4BogeyFreeB:!prev.fv4BogeyFreeB});});}
 
-  var rawA=H18.reduce(function(s,h2){return s+(parseInt(state.fv4Scores&&state.fv4Scores.A&&state.fv4Scores.A[h2])||0);},0);
-  var rawB=H18.reduce(function(s,h2){return s+(parseInt(state.fv4Scores&&state.fv4Scores.B&&state.fv4Scores.B[h2])||0);},0);
+  var fv4sc=state.fv4Scores||{A:{},B:{}};
+  var rawA=H18.reduce(function(s,h2){return s+(parseInt(fv4sc.A&&fv4sc.A[h2])||0);},0);
+  var rawB=H18.reduce(function(s,h2){return s+(parseInt(fv4sc.B&&fv4sc.B[h2])||0);},0);
   var hasScores=rawA>0||rawB>0;
   var aWins=hasScores&&rawA>0&&rawB>0&&rawA<rawB;
   var bWins=hasScores&&rawA>0&&rawB>0&&rawB<rawA;
 
   return h("div",null,
+    // Info bar
     h("div",{style:{background:C.bg,border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",marginBottom:10,fontSize:10,color:C.dim,lineHeight:1.6}},
-      "4V4: DRAFT FORMAT (leader picks first, alternating snake) | 1st=4pts, 2nd=2pts (per player) | Bogey-free scramble round bonus: +3pts per player in that foursome | CTP=+"+CTP_PTS+" | LD=+"+LD_PTS
+      "4V4: DRAFT FORMAT | 1st=4pts, 2nd=2pts per player | Bogey-free bonus: +3pts | CTP=+"+CTP_PTS+" | LD=+"+LD_PTS
     ),
-    // Draft section
+    // Draft picker
     !locked&&h("div",{style:{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:10,marginBottom:10}},
-      h("div",{style:{color:C.gold,fontWeight:700,fontSize:13,marginBottom:8}},"DRAFT - PICK IN ORDER"),
+      h("div",{style:{color:C.gold,fontWeight:700,fontSize:13,marginBottom:6}},"DRAFT - TAP TO PICK"),
       h("div",{style:{color:C.dim,fontSize:10,marginBottom:8}},
-        "Leader picks first for Team A, then alternates. Leaderboard order shown below.",
-        h("br",null),
-        remaining.length>0?"TEAM "+currentTeamPick+" PICKS NEXT":"Draft complete - lock in teams."
+        remaining.length>0
+          ? "TEAM "+currentPick+" PICKS NEXT ("+remaining.length+" remaining)"
+          : "Draft complete. Lock in teams below."
       ),
-      // Leaderboard order for reference
-      h("div",{style:{background:C.bg,borderRadius:6,padding:8,marginBottom:8}},
-        h("div",{style:{color:C.muted,fontSize:9,fontWeight:600,letterSpacing:1,marginBottom:5}},"LEADERBOARD ORDER"),
-        leaderboard.map(function(row,i){
-          var isPicked=drafted.indexOf(row.p)!==-1;
-          var team=dt.A.indexOf(row.p)!==-1?"A":dt.B.indexOf(row.p)!==-1?"B":null;
-          return h("div",{key:row.p,style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0",opacity:isPicked?0.4:1}},
-            h("span",{style:{color:C.dim,fontSize:11,width:18}},i+1),
-            h(Btn,{onClick:function(){if(!isPicked)makePick(row.p);},
-              disabled:isPicked,
-              style:{flex:1,padding:"5px 8px",border:"1px solid "+(team?PC[row.p]:C.border),borderRadius:4,fontSize:12,fontWeight:700,
-                background:team?PC[row.p]+"22":C.surface,color:team?PC[row.p]:C.cream,textAlign:"left",minHeight:34,
-                opacity:isPicked?0.5:1}},
-              row.p,team&&h("span",{style:{color:C.dim,fontSize:10}}," - Team "+team)
-            ),
-            h("span",{style:{color:C.muted,fontSize:11}},row.total+"pts")
+      // Available players
+      remaining.length>0&&h("div",{style:{marginBottom:10}},
+        h("div",{style:{color:C.muted,fontSize:9,fontWeight:600,letterSpacing:1,marginBottom:5}},"AVAILABLE (LEADERBOARD ORDER)"),
+        h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+          leaderboard.filter(function(p){return remaining.indexOf(p)!==-1;}).map(function(p,i){
+            var rank=leaderboard.indexOf(p)+1;
+            var col=currentPick==="A"?C.gold:C.red;
+            return h(Btn,{key:p,onClick:function(){makePick(p);},
+              style:{padding:"8px 12px",border:"2px solid "+col,borderRadius:6,fontSize:13,fontWeight:700,
+                background:col+"22",color:col,textAlign:"left",minHeight:42,display:"flex",alignItems:"center",gap:8}},
+              h("span",{style:{color:C.dim,fontSize:11,width:20}},rank),
+              p,
+              h("span",{style:{color:C.dim,fontSize:10,marginLeft:"auto"}},"Team "+currentPick+" picks")
+            );
+          })
+        )
+      ),
+      // Teams so far
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}},
+        ["A","B"].map(function(t){
+          var col=t==="A"?C.gold:C.red;
+          var players=t==="A"?teamA:teamB;
+          return h("div",{key:t,style:{background:C.bg,borderRadius:6,padding:8,border:"1px solid "+col+"55"}},
+            h("div",{style:{color:col,fontWeight:700,fontSize:12,marginBottom:5}},"TEAM "+t),
+            players.length===0
+              ? h("div",{style:{color:C.dim,fontSize:11,fontStyle:"italic"}},"no picks yet")
+              : players.map(function(p){return h("div",{key:p,style:{color:C.cream,fontSize:12,padding:"2px 0"}},p);})
           );
         })
       ),
-      remaining.length===0&&h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-        h(Btn,{onClick:lockDraft,style:{flex:1,padding:"8px",border:"1px solid "+C.birdie,borderRadius:5,fontSize:12,fontWeight:700,background:"#0d3a1a",color:C.birdie,minHeight:40}},"LOCK IN TEAMS"),
-        h(Btn,{onClick:undoPick,style:{padding:"8px 12px",border:"1px solid "+C.border,borderRadius:5,fontSize:12,fontWeight:700,background:C.surface,color:C.dim,minHeight:40}},"UNDO"),
-        h(Btn,{onClick:resetDraft,style:{padding:"8px 12px",border:"1px solid "+C.red,borderRadius:5,fontSize:12,fontWeight:700,background:C.bg,color:C.red,minHeight:40}},"RESET")
-      ),
-      drafted.length>0&&remaining.length>0&&h(Btn,{onClick:undoPick,style:{padding:"6px 12px",border:"1px solid "+C.border,borderRadius:4,fontSize:11,fontWeight:700,background:C.surface,color:C.dim,marginTop:6,minHeight:32}},"UNDO LAST PICK")
+      // Controls
+      h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+        drafted.length>0&&remaining.length>0&&h(Btn,{onClick:undoPick,style:{padding:"7px 12px",border:"1px solid "+C.border,borderRadius:5,fontSize:11,fontWeight:700,background:C.surface,color:C.dim,minHeight:38}},"UNDO"),
+        drafted.length>0&&remaining.length>0&&h(Btn,{onClick:resetDraft,style:{padding:"7px 12px",border:"1px solid "+C.red,borderRadius:5,fontSize:11,fontWeight:700,background:C.bg,color:C.red,minHeight:38}},"RESET"),
+        remaining.length===0&&h(Btn,{onClick:lockDraft,style:{flex:1,padding:"8px",border:"1px solid "+C.birdie,borderRadius:5,fontSize:12,fontWeight:700,background:"#0d3a1a",color:C.birdie,minHeight:42}},"LOCK IN TEAMS"),
+        remaining.length===0&&h(Btn,{onClick:resetDraft,style:{padding:"8px 12px",border:"1px solid "+C.red,borderRadius:5,fontSize:11,fontWeight:700,background:C.bg,color:C.red,minHeight:42}},"RESET")
+      )
     ),
-    // Teams display + editing
-    h(PairingEditor,{
-      title:"4V4 TEAMS"+(locked?" (LOCKED)":""),
-      pairs:[dt.A,dt.B],locked:locked,groupSize:4,
-      teamLabels:["Team A","Team B"],color:C.red,
-      onLock:lockDraft,onUnlock:unlockDraft,onSwap:swapDraft
-    }),
-    // Score entry
+    // Teams display when locked
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}},
+      ["A","B"].map(function(t){
+        var col=t==="A"?C.gold:C.red;
+        var players=t==="A"?teamA:teamB;
+        return h("div",{key:t,style:{background:C.surface,borderRadius:8,padding:10,border:"1px solid "+(t==="A"?C.golddim:"#6b1a1a")}},
+          h("div",{style:{color:col,fontWeight:700,fontSize:12,marginBottom:5}},"TEAM "+t),
+          players.length===0
+            ? h("div",{style:{color:C.dim,fontSize:11,fontStyle:"italic"}},"not set")
+            : players.map(function(p){return h("div",{key:p,style:{color:C.cream,fontSize:12,padding:"2px 0"}},p);}),
+          locked&&h(Btn,{onClick:unlockDraft,style:{marginTop:6,width:"100%",padding:"4px",border:"1px solid "+C.border,borderRadius:4,fontSize:10,fontWeight:700,background:C.bg,color:C.dim,minHeight:28}},"UNLOCK")
+        );
+      })
+    ),
+    // Score entry (only when locked)
     locked&&h("div",null,
       ["A","B"].map(function(t){
         var col=t==="A"?C.gold:C.red;
         var bdr=t==="A"?C.golddim:"#6b1a1a";
-        var players=dt[t]||[];
+        var players=t==="A"?teamA:teamB;
         var hasBF=t==="A"?state.fv4BogeyFreeA:state.fv4BogeyFreeB;
         return h("div",{key:t,style:{background:C.surface,borderRadius:8,padding:10,marginBottom:8,border:"1px solid "+bdr}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-            h("div",{style:{color:col,fontWeight:700,fontSize:13}},"TEAM "+t+": "+players.join(", ")),
+            h("div",{style:{color:col,fontWeight:700,fontSize:13}},"TEAM "+t),
             h(Btn,{onClick:function(){togBF(t);},style:{padding:"4px 10px",border:"1px solid "+(hasBF?C.birdie:C.border),borderRadius:4,fontSize:11,fontWeight:700,background:hasBF?"#0d3a1a":C.bg,color:hasBF?C.birdie:C.dim,minHeight:32}},hasBF?"BOGEY FREE +3":"BOGEY FREE?")
           ),
           h("div",{className:"sx"},
             h("div",{style:{display:"flex",gap:4,paddingBottom:2}},
               H18.map(function(h2){
+                var val=(fv4sc[t]&&fv4sc[t][h2])||"";
                 return h("div",{key:h2,style:{textAlign:"center",flexShrink:0}},
                   h("div",{style:{color:pars[h2]===3?C.gold:pars[h2]===5?"#60a5fa":C.dim,fontSize:9,marginBottom:2}},"H"+h2),
-                  h("input",{type:"number",min:"1",max:"12",value:(state.fv4Scores&&state.fv4Scores[t]&&state.fv4Scores[t][h2])||"",
+                  h("input",{type:"number",min:"1",max:"12",value:val,
                     onChange:function(ev){setScore(t,h2,ev.target.value);},
                     style:{width:44,height:44,textAlign:"center",border:"1px solid "+C.border,borderRadius:5,
-                      background:sBg(state.fv4Scores&&state.fv4Scores[t]&&state.fv4Scores[t][h2],pars[h2]),
-                      color:sCol(state.fv4Scores&&state.fv4Scores[t]&&state.fv4Scores[t][h2],pars[h2]),
+                      background:sBg(val,pars[h2]),color:sCol(val,pars[h2]),
                       fontSize:14,fontFamily:"Oswald,sans-serif",fontWeight:700}})
                 );
               })
@@ -983,19 +1004,14 @@ function FourV4Card(props){
           h(IndividualAward,{label:"LD",list:state.fv4LDList,holes:H18,pars:pars,players:players,onToggle:togLD,pts:LD_PTS,type:"ld",color:"#60a5fa"})
         );
       }),
-      // Result
       hasScores&&h("div",{style:{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:12,marginTop:4}},
-        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-          h("div",{style:{color:C.gold,fontWeight:700,fontSize:13}},"TEAM A"),
-          h("div",{style:{color:C.muted,fontSize:12}},"vs"),
-          h("div",{style:{color:C.red,fontWeight:700,fontSize:13}},"TEAM B")
+        h("div",{style:{color:C.cream,fontWeight:700,fontSize:13,marginBottom:10}},"RESULT"),
+        h("div",{style:{display:"flex",justifyContent:"space-around",alignItems:"center",marginBottom:8}},
+          h("div",{style:{textAlign:"center"}},h("div",{style:{color:C.gold,fontWeight:700,fontSize:12,marginBottom:4}},"TEAM A"),h("div",{style:{fontSize:24,fontWeight:800,color:aWins?C.gold:C.muted}},rawA)),
+          h("div",{style:{color:C.dim,fontSize:14}},"vs"),
+          h("div",{style:{textAlign:"center"}},h("div",{style:{color:C.red,fontWeight:700,fontSize:12,marginBottom:4}},"TEAM B"),h("div",{style:{fontSize:24,fontWeight:800,color:bWins?C.red:C.muted}},rawB))
         ),
-        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
-          h("div",{style:{fontSize:22,fontWeight:800,color:aWins?C.gold:C.muted}},rawA||"--"),
-          h("div",{style:{color:C.dim,fontSize:12}},"TOTAL STROKES"),
-          h("div",{style:{fontSize:22,fontWeight:800,color:bWins?C.red:C.muted}},rawB||"--")
-        ),
-        h("div",{style:{textAlign:"center",fontWeight:800,fontSize:16,color:aWins?C.gold:bWins?C.red:C.muted,marginTop:4}},
+        h("div",{style:{textAlign:"center",fontWeight:800,fontSize:16,color:aWins?C.gold:bWins?C.red:C.muted}},
           aWins?"TEAM A WINS (+4pts each)":bWins?"TEAM B WINS (+4pts each)":"ALL SQUARE"
         )
       )
